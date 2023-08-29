@@ -1794,6 +1794,7 @@ enum ImGuiMultiSelectFlags_
     ImGuiMultiSelectFlags_ClearOnClickVoid      = 1 << 3,   // Clear selection when clicking on empty location within scope.
     ImGuiMultiSelectFlags_ScopeWindow           = 1 << 4,   // Scope for _ClearOnClickVoid and _BoxSelect is whole window (Default). Use if (use if BeginMultiSelect() covers a whole window.
     ImGuiMultiSelectFlags_ScopeRect             = 1 << 5,   // Scope for _ClearOnClickVoid and _BoxSelect is rectangle covering submitted items. Use if multiple BeginMultiSelect() are used in the same host window.
+    ImGuiMultiSelectFlags_BoxSelect             = 1 << 6,   // Enable box-selection. Box-selection works better with little bit of spacing between items hit-box in order to be able to aim at empty space.
     ImGuiMultiSelectFlags_SelectOnClick         = 1 << 7,   // Apply selection on mouse down when clicking on unselected item. (Default)
     ImGuiMultiSelectFlags_SelectOnClickRelease  = 1 << 8,   // Apply selection on mouse release when clicking an unselected item. Allow dragging an unselected item without altering selection.
 };
