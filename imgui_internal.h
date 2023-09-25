@@ -1667,6 +1667,8 @@ struct IMGUI_API ImGuiMultiSelectTempData
     ImGuiMultiSelectState*  Storage;
     ImGuiID                 FocusScopeId;       // Copied from g.CurrentFocusScopeId (unless another selection scope was pushed manually)
     ImGuiMultiSelectFlags   Flags;
+    ImVec2                  ScopeRectMin;
+    ImVec2                  BackupCursorMaxPos;
     ImGuiKeyChord           KeyMods;
     ImGuiMultiSelectIO      IO;                 // Requests are set and returned by BeginMultiSelect()/EndMultiSelect() + written to by user during the loop.
     bool                    LoopRequestClear;
