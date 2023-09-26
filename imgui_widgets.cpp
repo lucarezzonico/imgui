@@ -6871,6 +6871,8 @@ void ImGui::DebugNodeTypingSelectState(ImGuiTypingSelectState* data)
 //-------------------------------------------------------------------------
 // [SECTION] Widgets: Multi-Select support
 //-------------------------------------------------------------------------
+// - DebugLogMultiSelectRequests() [Internal]
+// - MultiSelectStartBoxSelect() [Internal]
 // - BeginMultiSelect()
 // - EndMultiSelect()
 // - SetNextItemSelectionUserData()
@@ -6907,6 +6909,8 @@ ImGuiMultiSelectIO* ImGui::BeginMultiSelect(ImGuiMultiSelectFlags flags)
     ImGuiMultiSelectTempData* ms = &g.MultiSelectTempData[0];
     IM_ASSERT(g.CurrentMultiSelect == NULL); // No recursion allowed yet (we could allow it if we deem it useful)
     g.CurrentMultiSelect = ms;
+    if ((flags & (ImGuiMultiSelectFlags_ScopeWindow | ImGuiMultiSelectFlags_ScopeRect)) == 0)
+        flags |= ImGuiMultiSelectFlags_ScopeWindow;
 
     // FIXME: BeginFocusScope()
     const ImGuiID id = window->IDStack.back();
@@ -7012,6 +7016,23 @@ ImGuiMultiSelectIO* ImGui::BeginMultiSelect(ImGuiMultiSelectFlags flags)
     return &ms->IO;
 }
 
+static void ScrollWithMouseDrag(ImGuiWindow* window, const ImRect& r)
+{
+    ImGuiContext& g = *GImGui;
+    for (int n = 0; n < 2; n++)
+    {
+        float dist = (g.IO.MousePos[n] > r.Max[n]) ? g.IO.MousePos[n] - r.Max[n] : (g.IO.MousePos[n] < r.Min[n]) ? g.IO.MousePos[n] - r.Min[n] : 0.0f;
+        if (dist == 0.0f || (dist < 0.0f && window->Scroll[n] < 0.0f) || (dist > 0.0f && window->Scroll[n] >= window->ScrollMax[n]))
+            continue;
+        float speed_multiplier = ImLinearRemapClamp(g.FontSize, g.FontSize * 5.0f, 1.0f, 4.0f, ImAbs(dist)); // x1 to x4 depending on distance
+        float scroll_step = IM_ROUND(g.FontSize * 35.0f * speed_multiplier * ImSign(dist) * g.IO.DeltaTime);
+        if (n == 0)
+            ImGui::SetScrollX(window, window->Scroll[n] + scroll_step);
+        else
+            ImGui::SetScrollY(window, window->Scroll[n] + scroll_step);
+    }
+}
+
 // Return updated ImGuiMultiSelectIO structure. Lifetime: until EndFrame() or next BeginMultiSelect() call.
 ImGuiMultiSelectIO* ImGui::EndMultiSelect()
 {
@@ -7022,6 +7043,7 @@ ImGuiMultiSelectIO* ImGui::EndMultiSelect()
     IM_ASSERT(ms->FocusScopeId == g.CurrentFocusScopeId);
     IM_ASSERT(g.CurrentMultiSelect != NULL && storage->Window == g.CurrentWindow);
 
+    const ImRect scope_rect = (ms->Flags & ImGuiMultiSelectFlags_ScopeRect) ? ImRect(ms->ScopeRectMin, ImMax(window->DC.CursorMaxPos, ms->ScopeRectMin)) : window->InnerClipRect;
     if (ms->IsFocused)
     {
         // We currently don't allow user code to modify RangeSrcItem by writing to BeginIO's version, but that would be an easy change here.
@@ -7037,25 +7059,30 @@ ImGuiMultiSelectIO* ImGui::EndMultiSelect()
             storage->NavIdSelected = -1;
         }
 
-        // Box-select: render selection rectangle
-        // FIXME-MULTISELECT: Scroll on box-select
         if ((ms->Flags & ImGuiMultiSelectFlags_BoxSelect) && storage->BoxSelectActive)
         {
+            // Box-select: render selection rectangle
             ms->Storage->BoxSelectEndPosRel = WindowPosAbsToRel(window, g.IO.MousePos);
-            window->DrawList->AddRectFilled(ms->BoxSelectRectCurr.Min, ms->BoxSelectRectCurr.Max, GetColorU32(ImGuiCol_SeparatorHovered, 0.30f)); // FIXME-MULTISELECT: Styling
-            window->DrawList->AddRect(ms->BoxSelectRectCurr.Min, ms->BoxSelectRectCurr.Max, GetColorU32(ImGuiCol_NavHighlight)); // FIXME-MULTISELECT: Styling
+            ImRect box_select_r = ms->BoxSelectRectCurr;
+            box_select_r.ClipWith(scope_rect);
+            window->DrawList->AddRectFilled(box_select_r.Min, box_select_r.Max, GetColorU32(ImGuiCol_SeparatorHovered, 0.30f)); // FIXME-MULTISELECT: Styling
+            window->DrawList->AddRect(box_select_r.Min, box_select_r.Max, GetColorU32(ImGuiCol_NavHighlight)); // FIXME-MULTISELECT: Styling
+
+            // Box-select: scroll
+            ImRect scroll_r = scope_rect;
+            scroll_r.Expand(g.Style.FramePadding);
+            if ((ms->Flags & ImGuiMultiSelectFlags_ScopeWindow) && !scroll_r.Contains(g.IO.MousePos))
+                ScrollWithMouseDrag(window, scroll_r);
         }
     }
 
     if (ms->IsEndIO == false)
         ms->IO.Requests.resize(0);
 
-    const ImRect scope_rect(ms->ScopeRectMin, ImMax(window->DC.CursorMaxPos, ms->ScopeRectMin));
-    const bool scope_hovered = (ms->Flags & ImGuiMultiSelectFlags_ScopeRect) ? IsMouseHoveringRect(scope_rect.Min, scope_rect.Max) : IsWindowHovered();
-
     // Clear selection when clicking void?
     // We specifically test for IsMouseDragPastThreshold(0) == false to allow box-selection!
-    if (scope_hovered && g.HoveredId == 0)
+    const bool scope_hovered = (ms->Flags & ImGuiMultiSelectFlags_ScopeRect) ? scope_rect.Contains(g.IO.MousePos) : IsWindowHovered();
+    if (scope_hovered && g.HoveredId == 0 && g.ActiveId == 0)
     {
         if (ms->Flags & ImGuiMultiSelectFlags_BoxSelect)
             if (!storage->BoxSelectActive && !storage->BoxSelectStarting && g.IO.MouseClickedCount[0] == 1)
